@@ -47,5 +47,5 @@ type MetricsConfig struct {
 
 	// EventsWindow controls how far back the events collector looks per
 	// scrape. Keep it near the scrape interval to avoid double-counting.
-	EventsWindow time.Duration `mapstructure:"events_window" default:"true"`
+	EventsWindow time.Duration `mapstructure:"events_window" default:"60s"`
 }
