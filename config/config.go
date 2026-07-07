@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 
+	"github.com/fmotalleb/go-tools/defaulter"
 	"github.com/mitchellh/mapstructure"
 	"github.com/spf13/viper"
 )
@@ -32,17 +33,7 @@ type Config struct {
 		} `mapstructure:"tls"`
 	} `mapstructure:"web"`
 
-	Metrics struct {
-		// Heavy / expensive collections
-		CollectPerformance     bool `mapstructure:"collect_performance"`      // PerformanceManager queries
-		CollectHardwareSensors bool `mapstructure:"collect_hardware_sensors"` // Host hardware health sensors
-
-		// Medium cost but useful
-		CollectGuestInfo       bool `mapstructure:"collect_guest_info"`
-		CollectDatastore       bool `mapstructure:"collect_datastore"`
-		CollectNetworkAdapters bool `mapstructure:"collect_network_adapters"`
-		CollectVMDiskDetails   bool `mapstructure:"collect_vm_disk_details"`
-	} `mapstructure:"metrics"`
+	Metrics MetricsConfig `mapstructure:"metrics"`
 }
 
 func Load(path string) (*Config, error) {
@@ -74,7 +65,7 @@ func Load(path string) (*Config, error) {
 	if cfg.Secrets.Vault.Address != "" {
 		// placeholder: implement vault secret fetch
 	}
-
+	defaulter.ApplyDefaults(&cfg, nil)
 	return &cfg, nil
 }
 
