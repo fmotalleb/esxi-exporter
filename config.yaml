@@ -1,0 +1,11 @@
+hosts:
+  - host: "https://vcsa-host.idc.local/sdk/"
+    username: "username"
+    password: "password"
+    insecure: true
+
+web:
+  listen_address: ":9272"
+  tls:
+    cert_file: "/etc/ssl/cert.pem"
+    key_file: "/etc/ssl/key.pem"
