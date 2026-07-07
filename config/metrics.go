@@ -11,8 +11,7 @@ import "time"
 // collector code assumes they exist. Sensible defaults are documented on
 // each field; wire them through your mapstructure loader as you prefer.
 type MetricsConfig struct {
-	// Legacy toggles (kept for backward compatibility with existing
-	// deployments). Default: true.
+	// Guest toggles. Default: true.
 	CollectHardwareSensors *bool `mapstructure:"collect_hardware_sensors" default:"true"`
 	CollectGuestInfo       *bool `mapstructure:"collect_guest_info" default:"true"`
 
