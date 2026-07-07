@@ -332,15 +332,28 @@ func (c *VMCollector) emitGuest(v *mo.VirtualMachine, s *scrapeContext) {
 		s.ch <- prometheus.MustNewConstMetric(c.guestHostname, prometheus.GaugeValue, 1,
 			name, hostName, v.Guest.HostName)
 	}
-	if v.Guest.IpAddress != "" {
+	// Deduplicate IPs within a single VM: the primary IpAddress is
+	// almost always repeated inside Guest.Net[].IpAddress, and IPv6
+	// link-local addresses show up on every vNIC. Emitting all of them
+	// produces a per-VM avalanche of "collected before" errors. The
+	// scrape-wide dedup channel would catch it too, but doing the work
+	// here is O(nics) instead of O(scrape) and keeps intent obvious.
+	seen := make(map[string]struct{})
+	emitIP := func(ip string) {
+		if ip == "" {
+			return
+		}
+		if _, dup := seen[ip]; dup {
+			return
+		}
+		seen[ip] = struct{}{}
 		s.ch <- prometheus.MustNewConstMetric(c.guestIP, prometheus.GaugeValue, 1,
-			name, hostName, v.Guest.IpAddress)
+			name, hostName, ip)
 	}
-	// Additional IPs from NIC list — separate series so consumers can filter.
+	emitIP(v.Guest.IpAddress)
 	for _, nic := range v.Guest.Net {
 		for _, ip := range nic.IpAddress {
-			s.ch <- prometheus.MustNewConstMetric(c.guestIP, prometheus.GaugeValue, 1,
-				name, hostName, ip)
+			emitIP(ip)
 		}
 	}
 
@@ -415,8 +428,14 @@ func (c *VMCollector) emitConfig(v *mo.VirtualMachine, s *scrapeContext) {
 	// Datastore/cluster/pool/folder resolution requires walking MoRefs.
 	// We emit MoRef values as info labels; a downstream relabel_config
 	// against a separate MoRef->name map keeps this cheap. Otherwise we'd
-	// balloon the property list per VM.
+	// balloon the property list per VM. Dedup because vSphere can list
+	// the same datastore twice for a VM spanning multiple hosts.
+	seenDS := make(map[string]struct{})
 	for _, ds := range v.Datastore {
+		if _, dup := seenDS[ds.Value]; dup {
+			continue
+		}
+		seenDS[ds.Value] = struct{}{}
 		s.ch <- prometheus.MustNewConstMetric(c.datastoreInfo, prometheus.GaugeValue, 1,
 			name, hostName, ds.Value)
 	}
@@ -481,7 +500,7 @@ func (c *VMCollector) emitPerfCPU(v *mo.VirtualMachine, s *scrapeContext) {
 		"cpu.ready.summation", "cpu.wait.summation", "cpu.costop.summation",
 		"cpu.system.summation", "cpu.used.summation",
 		"cpu.entitlement.latest", "cpu.demand.average", "cpu.latency.average",
-	}, "")
+	}, "", IntervalRealtime)
 	name, hostName := v.Summary.Config.Name, morefValue(v.Runtime.Host)
 	emit := func(desc *prometheus.Desc, key string) {
 		if x, ok := m[key]; ok {
@@ -504,7 +523,7 @@ func (c *VMCollector) emitPerfMem(v *mo.VirtualMachine, s *scrapeContext) {
 		"mem.overhead.average", "mem.swapped.average", "mem.vmmemctl.average",
 		"mem.compressed.average", "mem.shared.average", "mem.zero.average",
 		"mem.entitlement.average",
-	}, "")
+	}, "", IntervalRealtime)
 	name, hostName := v.Summary.Config.Name, morefValue(v.Runtime.Host)
 	kb := func(desc *prometheus.Desc, key string) {
 		if x, ok := m[key]; ok {
@@ -539,7 +558,7 @@ func (c *VMCollector) emitPerfDisk(v *mo.VirtualMachine, s *scrapeContext) {
 		"virtualDisk.numberWriteAveraged.average",
 		"virtualDisk.totalReadLatency.average",
 		"virtualDisk.totalWriteLatency.average",
-	})
+	}, IntervalRealtime)
 	name, hostName := v.Summary.Config.Name, morefValue(v.Runtime.Host)
 	// virtualDisk perf uses instances like "scsi0:0" — we relabel to the
 	// device label our config emits (disk-<key>) when possible by matching
@@ -575,7 +594,7 @@ func (c *VMCollector) emitPerfNet(v *mo.VirtualMachine, s *scrapeContext) {
 		"net.packetsRx.summation", "net.packetsTx.summation",
 		"net.bytesRx.average", "net.bytesTx.average",
 		"net.droppedRx.summation", "net.droppedTx.summation",
-	})
+	}, IntervalRealtime)
 	name, hostName := v.Summary.Config.Name, morefValue(v.Runtime.Host)
 	emit := func(desc *prometheus.Desc, key string, x float64) {
 		for _, sample := range m[key] {

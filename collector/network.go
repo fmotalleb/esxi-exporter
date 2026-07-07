@@ -73,7 +73,7 @@ func (c *NetworkCollector) Collect(s *scrapeContext) {
 
 	var hosts []mo.HostSystem
 	if err := v.Retrieve(s.ctx, []string{"HostSystem"},
-		[]string{"name", "config.network"}, &hosts); err != nil {
+		[]string{"name", "summary.config.name", "config.network"}, &hosts); err != nil {
 		log.Printf("network: retrieve hosts failed: %v", err)
 		return
 	}
@@ -97,8 +97,8 @@ func (c *NetworkCollector) Collect(s *scrapeContext) {
 }
 
 func (c *NetworkCollector) emitHost(h *mo.HostSystem, s *scrapeContext) {
-	name := h.Name
-	if h.Config == nil || h.Config.Network == nil {
+	name := hostName(h)
+	if name == "" || h.Config == nil || h.Config.Network == nil {
 		return
 	}
 	net := h.Config.Network

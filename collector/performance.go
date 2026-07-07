@@ -8,26 +8,46 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 )
 
-// queryPerf pulls the most recent realtime sample (20-second interval on
-// ESXi) for the given counters against a single managed object. It returns
-// a flat name->value map so callers don't have to walk EntityMetric slices.
+// Interval constants for QueryPerf. vSphere only accepts a fixed set of
+// IntervalIds, and — crucially — which ones are valid depends on the
+// entity type:
+//
+//   - HostSystem / VirtualMachine: 20 (realtime) works, plus all historical rollups.
+//   - Datastore / ClusterComputeResource / ResourcePool: realtime is NOT
+//     available. The API returns "A specified parameter was not correct:
+//     querySpec.interval" if you pass 20. The shortest valid interval is
+//     300s (past-day rollup) and it only exists against vCenter, not a
+//     standalone ESXi host.
+//
+// Callers pick the right one. Getting this wrong isn't a soft failure —
+// vCenter rejects the whole request and returns nothing.
+const (
+	IntervalRealtime = 20  // HostSystem, VirtualMachine only
+	IntervalHistoric = 300 // Datastore, Cluster, ResourcePool (vCenter only)
+)
+
+// queryPerf pulls the most recent sample for the given counters against a
+// single managed object. It returns a flat name->value map so callers
+// don't have to walk EntityMetric slices.
 //
 // Design notes:
 //   - We request MaxSample=1 because Prometheus is the scheduler here; we
 //     only ever want the latest observation. Anything older is either stale
 //     or a job for a TSDB, not the exporter.
-//   - Realtime interval (IntervalId=20) works against standalone ESXi. For
-//     vCenter-only aggregates you'd use the 300s historical interval, but
-//     that's out of scope for per-entity metrics like cpu.ready.
 //   - Missing counters are silently skipped: PerfCache.IDs already logs
 //     unknowns once, and we don't want a scrape to fail because a specific
 //     host doesn't expose, say, memory.compressed on very old hardware.
+//   - StartTime is intentionally nil: with MaxSample=1 vCenter returns the
+//     most recent completed interval for the requested IntervalId. Setting
+//     StartTime on historical intervals is another way to trip the
+//     "parameter not correct" fault.
 func queryPerf(
 	ctx context.Context,
 	perf *PerfCache,
 	entity types.ManagedObjectReference,
 	counters []string,
 	instance string, // "" = aggregate, "*" = per-instance
+	interval int32,
 ) map[string]perfSample {
 	ids := perf.IDs(ctx, counters)
 	if len(ids) == 0 {
@@ -46,7 +66,7 @@ func queryPerf(
 		Entity:     entity,
 		MaxSample:  1,
 		MetricId:   metricIDs,
-		IntervalId: 20, // realtime
+		IntervalId: interval,
 	}
 
 	mgr := performance.NewManager(perf.client)
@@ -93,6 +113,7 @@ func queryPerfInstances(
 	perf *PerfCache,
 	entity types.ManagedObjectReference,
 	counters []string,
+	interval int32,
 ) map[string][]perfSample {
 	ids := perf.IDs(ctx, counters)
 	if len(ids) == 0 {
@@ -112,9 +133,10 @@ func queryPerfInstances(
 		Entity:     entity,
 		MaxSample:  1,
 		MetricId:   metricIDs,
-		IntervalId: 20,
+		IntervalId: interval,
 	}})
 	if err != nil {
+		log.Printf("perf query failed for %s: %v", entity.Value, err)
 		return nil
 	}
 	result, err := mgr.ToMetricSeries(ctx, series)

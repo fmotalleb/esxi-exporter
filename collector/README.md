@@ -77,6 +77,47 @@ alarms.go                esxi_alarm_*      (triggered alarm counts + info)
    guards to need adjusting; the diagnostics from `go build` will point
    right at them.
 
+## Perf intervals
+
+vSphere accepts a fixed set of `IntervalId` values per entity type. Getting
+this wrong isn't a soft failure — the whole query fails with
+`ServerFaultCode: A specified parameter was not correct: querySpec.interval`.
+
+| Entity                    | Realtime (20s) | Historic (300s+) | Where lives |
+|---------------------------|:--------------:|:----------------:|-------------|
+| `HostSystem`              | ✅             | ✅               | ESXi + vCenter |
+| `VirtualMachine`          | ✅             | ✅               | ESXi + vCenter |
+| `Datastore`               | ❌             | ✅               | vCenter only |
+| `ClusterComputeResource`  | ❌             | ✅               | vCenter only |
+| `ResourcePool`            | ❌             | ✅               | vCenter only |
+
+The two helpers in `performance.go` take an explicit `interval` argument;
+use `IntervalRealtime` for host/vm and `IntervalHistoric` for everything
+else. Historic values lag ~5 min but that's the best the API offers.
+
+## Duplicate series
+
+The collector runs sub-collectors once per configured endpoint. If your
+`cfg.Hosts` lists the same vCenter twice, or lists a vCenter plus one of
+its managed ESXi hosts, the raw metric stream will contain duplicates for
+overlapping inventory. `collector.go` funnels every metric through a
+`dedupChannel` that drops repeats within a single scrape, so Prometheus
+sees a clean stream.
+
+That's a safety net, **not** an efficiency win — you still pay the network
+cost twice. If you see lots of drops, list each vCenter/ESXi only once
+in your config.
+
+Common source-level duplicates that are handled at the emit site (so we
+also save bandwidth downstream):
+
+- `esxi_vm_guest_ip_info` — primary `Guest.IpAddress` is repeated inside
+  `Guest.Net[].IpAddress`; dedupd per-VM.
+- `esxi_vm_datastore_info` — same datastore listed twice for shared VMs.
+- `esxi_alarm_count` — same alarm surfacing via multiple parent entities.
+- `esxi_resource_pool_*` — every host has a root pool literally named
+  `"Resources"`, disambiguated with an added `owner` label.
+
 ## Cardinality
 
 The heavy hitters, in descending order:

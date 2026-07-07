@@ -142,6 +142,17 @@ func (c *DatastoreCollector) emit(ds *mo.Datastore, s *scrapeContext) {
 	if !*c.cfg.Metrics.CollectDatastorePerf {
 		return
 	}
+	// Datastore perf counters are NOT exposed at the 20s realtime
+	// interval — vCenter returns "querySpec.interval" fault. Use the
+	// 300s historical rollup, which is the shortest interval available
+	// for Datastore/Cluster/ResourcePool entities. This means the values
+	// lag ~5 min behind live activity; acceptable for capacity/latency
+	// monitoring, and there's no lower-latency alternative in the API.
+	//
+	// It also means this collector is effectively vCenter-only: a
+	// standalone ESXi host has no historical database and will return
+	// empty results. The DatastoreCollector's capacity/space metrics
+	// above still work standalone; only the perf block requires vCenter.
 	m := queryPerf(s.ctx, s.perf, ds.Reference(), []string{
 		"datastore.totalReadLatency.average",
 		"datastore.totalWriteLatency.average",
@@ -151,7 +162,7 @@ func (c *DatastoreCollector) emit(ds *mo.Datastore, s *scrapeContext) {
 		"datastore.numberWriteAveraged.average",
 		"datastore.datastoreIops.average",
 		"datastore.sizeNormalizedDatastoreLatency.average",
-	}, "")
+	}, "", IntervalHistoric)
 	emit := func(desc *prometheus.Desc, key string, x float64) {
 		if v, ok := m[key]; ok {
 			s.ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue,

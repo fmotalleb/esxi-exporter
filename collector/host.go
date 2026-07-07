@@ -283,8 +283,12 @@ func (c *HostCollector) Collect(s *scrapeContext) {
 	var hosts []mo.HostSystem
 	// We ask for the specific subtrees we use — full properties would drag
 	// down performance and memory on large clusters.
+	// Always ask for "name" explicitly. Without it mo.HostSystem.Name is
+	// empty (govmomi does not fill inherited ManagedEntity properties
+	// automatically from a summary fetch), producing series with
+	// host="" and immediate dedup collisions across hosts.
 	if err := v.Retrieve(s.ctx, []string{"HostSystem"},
-		[]string{"summary", "runtime", "config", "hardware", "config.network"},
+		[]string{"name", "summary", "runtime", "config", "hardware", "config.network", "capability"},
 		&hosts); err != nil {
 		log.Printf("host: retrieve failed: %v", err)
 		return
@@ -314,9 +318,12 @@ func (c *HostCollector) Collect(s *scrapeContext) {
 // inventory. Kept separate so the perf helpers can assume the entity is
 // reachable and skip these fields.
 func (c *HostCollector) emitStatic(h *mo.HostSystem, s *scrapeContext) {
-	name := h.Summary.Config.Name
+	name := hostName(h)
 	if name == "" {
-		name = h.Name
+		// If we still can't find a name, the entity is unusable —
+		// skipping avoids emitting series with host="" that would
+		// collide with every other unnamed host.
+		return
 	}
 
 	sum := h.Summary
@@ -355,7 +362,10 @@ func (c *HostCollector) emitStatic(h *mo.HostSystem, s *scrapeContext) {
 // lockdown mode, TPM, secure boot, etc. These come from config/runtime
 // rather than the perf pipeline, so we can gate them cheaply.
 func (c *HostCollector) emitRuntime(h *mo.HostSystem, s *scrapeContext) {
-	name := h.Name
+	name := hostName(h)
+	if name == "" {
+		return
+	}
 	if h.Runtime.BootTime != nil {
 		s.ch <- prometheus.MustNewConstMetric(c.bootTime, prometheus.GaugeValue,
 			float64(h.Runtime.BootTime.Unix()), name)
@@ -402,12 +412,15 @@ func (c *HostCollector) emitRuntime(h *mo.HostSystem, s *scrapeContext) {
 }
 
 func (c *HostCollector) emitPerfCPU(h *mo.HostSystem, s *scrapeContext) {
+	name := hostName(h)
+	if name == "" {
+		return
+	}
 	m := queryPerf(s.ctx, s.perf, h.Reference(), []string{
 		"cpu.ready.summation", "cpu.system.summation", "cpu.used.summation",
 		"cpu.wait.summation", "cpu.idle.summation",
 		"cpu.utilization.average", "cpu.coreUtilization.average",
-	}, "")
-	name := h.Name
+	}, "", IntervalRealtime)
 	emit := func(desc *prometheus.Desc, key string) {
 		if v, ok := m[key]; ok {
 			s.ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, v.Value, name)
@@ -423,13 +436,16 @@ func (c *HostCollector) emitPerfCPU(h *mo.HostSystem, s *scrapeContext) {
 }
 
 func (c *HostCollector) emitPerfMem(h *mo.HostSystem, s *scrapeContext) {
+	name := hostName(h)
+	if name == "" {
+		return
+	}
 	m := queryPerf(s.ctx, s.perf, h.Reference(), []string{
 		"mem.active.average", "mem.consumed.average", "mem.granted.average",
 		"mem.shared.average", "mem.vmmemctl.average", "mem.swapin.average",
 		"mem.swapout.average", "mem.compressed.average", "mem.overhead.average",
 		"mem.zero.average", "mem.state.latest",
-	}, "")
-	name := h.Name
+	}, "", IntervalRealtime)
 	kb := func(desc *prometheus.Desc, key string) {
 		if v, ok := m[key]; ok {
 			// vSphere returns KB; multiply to bytes for Prometheus
@@ -454,14 +470,17 @@ func (c *HostCollector) emitPerfMem(h *mo.HostSystem, s *scrapeContext) {
 }
 
 func (c *HostCollector) emitPerfDisk(h *mo.HostSystem, s *scrapeContext) {
+	name := hostName(h)
+	if name == "" {
+		return
+	}
 	m := queryPerfInstances(s.ctx, s.perf, h.Reference(), []string{
 		"disk.totalReadLatency.average", "disk.totalWriteLatency.average",
 		"disk.kernelLatency.average", "disk.deviceLatency.average",
 		"disk.queueLatency.average",
 		"disk.numberReadAveraged.average", "disk.numberWriteAveraged.average",
 		"disk.read.average", "disk.write.average",
-	})
-	name := h.Name
+	}, IntervalRealtime)
 	// Iterate per counter so we emit one Prometheus series per (device)
 	// instance — the "device" label carries the canonical name (e.g.
 	// naa.6000c29...).
@@ -484,14 +503,17 @@ func (c *HostCollector) emitPerfDisk(h *mo.HostSystem, s *scrapeContext) {
 }
 
 func (c *HostCollector) emitPerfNet(h *mo.HostSystem, s *scrapeContext) {
+	name := hostName(h)
+	if name == "" {
+		return
+	}
 	m := queryPerfInstances(s.ctx, s.perf, h.Reference(), []string{
 		"net.packetsRx.summation", "net.packetsTx.summation",
 		"net.bytesRx.average", "net.bytesTx.average",
 		"net.droppedRx.summation", "net.droppedTx.summation",
 		"net.errorsRx.summation", "net.errorsTx.summation",
 		"net.multicastRx.summation", "net.broadcastRx.summation",
-	})
-	name := h.Name
+	}, IntervalRealtime)
 	emit := func(desc *prometheus.Desc, key string, xform float64) {
 		for _, sample := range m[key] {
 			s.ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue,
@@ -530,4 +552,16 @@ func (c *HostCollector) emitPerfNet(h *mo.HostSystem, s *scrapeContext) {
 		s.ch <- prometheus.MustNewConstMetric(c.netDuplex, prometheus.GaugeValue, dup, name, pnic.Device)
 		s.ch <- prometheus.MustNewConstMetric(c.netState, prometheus.GaugeValue, state, name, pnic.Device)
 	}
+}
+
+// hostName returns the best available name for a HostSystem, preferring
+// the summary DNS name (matches vCenter UI) and falling back to the
+// ManagedEntity name. Both can be empty on a disconnected host or when
+// the caller forgot to request "name" in the property set — return "" and
+// let the caller skip emitting so we don't produce host="" collisions.
+func hostName(h *mo.HostSystem) string {
+	if h.Summary.Config.Name != "" {
+		return h.Summary.Config.Name
+	}
+	return h.Name
 }

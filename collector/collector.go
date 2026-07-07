@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	dto "github.com/prometheus/client_model/go"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
@@ -23,6 +25,15 @@ const defaultCollectTimeout = 60 * time.Second
 // registrations for every sub-collector (host, vm, datastore, cluster,
 // network, resource pool, sensors, events, alarms) and fans out Collect()
 // calls across the configured hosts.
+//
+// Duplicate-series contract: sub-collectors are executed once per configured
+// endpoint. When several endpoints point at the same vCenter (or when a
+// vCenter and one of its managed hosts are both listed), a naive fan-out
+// would emit every host/vm/datastore twice and Prometheus rejects the
+// scrape. The dedupSet below is shared across every sub-collector for a
+// scrape and keys on (metric, labels). The first emit wins; later ones are
+// dropped silently. That keeps operator configs forgiving without needing
+// to teach every collector about the endpoint topology.
 type ESXiCollector struct {
 	cfg *config.Config
 
@@ -73,13 +84,19 @@ func (c *ESXiCollector) Collect(ch chan<- prometheus.Metric) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultCollectTimeout)
 	defer cancel()
 
+	// One dedup set for the whole scrape. We wrap the caller-supplied
+	// channel so every sub-collector's emit path filters through it
+	// without having to know about it.
+	dedup := newDedupChannel(ch)
+	defer dedup.close()
+
 	var wg sync.WaitGroup
 	for _, spec := range c.cfg.Hosts {
 		spec := spec
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c.collectEndpoint(ctx, ch, spec)
+			c.collectEndpoint(ctx, dedup.in, spec)
 		}()
 	}
 	wg.Wait()
@@ -202,4 +219,86 @@ func boolToFloat(b bool) float64 {
 		return 1
 	}
 	return 0
+}
+
+// -----------------------------------------------------------------------
+// dedupChannel: a metric-forwarding pump that drops repeats.
+// -----------------------------------------------------------------------
+//
+// Prometheus panics a scrape if the same (fqName, labels) tuple arrives
+// twice. Sub-collectors can produce duplicates for legitimate reasons:
+//
+//   - multiple endpoints in cfg.Hosts pointing at overlapping inventory
+//     (e.g. vCenter + one of its ESXi hosts)
+//   - a vCenter surfacing the same HostSystem via several parent folders
+//   - VMware Tools reporting the same IP on primary + per-NIC lists
+//   - identically-named root resource pools ("Resources") on every host
+//
+// Rather than push topology awareness into every collector, we forward all
+// metrics through a single goroutine that hashes each Metric's descriptor
+// + label values and drops anything already seen this scrape. It's O(n)
+// with a map, no locks needed because everything funnels through one
+// goroutine.
+type dedupChannel struct {
+	in   chan prometheus.Metric
+	out  chan<- prometheus.Metric
+	done chan struct{}
+}
+
+func newDedupChannel(out chan<- prometheus.Metric) *dedupChannel {
+	// Buffered so producers don't block on the dedup goroutine's map
+	// lookups. 1024 is enough headroom for very large scrapes.
+	dc := &dedupChannel{
+		in:   make(chan prometheus.Metric, 1024),
+		out:  out,
+		done: make(chan struct{}),
+	}
+	go dc.run()
+	return dc
+}
+
+func (d *dedupChannel) run() {
+	defer close(d.done)
+	seen := make(map[string]struct{}, 4096)
+	for m := range d.in {
+		key := metricKey(m)
+		if _, dup := seen[key]; dup {
+			// Silent drop: logging every duplicate on a big
+			// cluster would drown out real problems.
+			continue
+		}
+		seen[key] = struct{}{}
+		d.out <- m
+	}
+}
+
+func (d *dedupChannel) close() {
+	close(d.in)
+	<-d.done
+}
+
+// metricKey extracts a stable identity from a prometheus.Metric. Metric's
+// public API only exposes Write(*dto.Metric) + Desc(), so we serialize the
+// desc string + label pairs into a single key. The alternative (reflecting
+// into the constMetric internals) is fragile across client_golang versions.
+func metricKey(m prometheus.Metric) string {
+	var pb dto.Metric
+	if err := m.Write(&pb); err != nil {
+		// If Write fails the metric is broken anyway; use the desc
+		// pointer as a fallback key so we don't dedup unrelated
+		// broken metrics against each other.
+		return m.Desc().String()
+	}
+	// Desc().String() carries fqName + help + constant labels; combining
+	// with the variable label values from pb makes the key unique per
+	// series without needing to know the label names.
+	var b []byte
+	b = append(b, m.Desc().String()...)
+	for _, l := range pb.Label {
+		b = append(b, 0x1f) // ASCII unit separator, cheap delimiter
+		b = append(b, l.GetName()...)
+		b = append(b, '=')
+		b = append(b, l.GetValue()...)
+	}
+	return string(b)
 }

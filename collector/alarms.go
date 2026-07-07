@@ -59,9 +59,23 @@ func (c *AlarmsCollector) Collect(s *scrapeContext) {
 	}
 
 	counts := map[types.ManagedEntityStatus]int{}
+	// Same TriggeredAlarmState can surface on multiple parent entities
+	// (the entity itself + its folder chain when we walk ManagedEntity).
+	// Dedup on the alarm's own Key rather than (entity, alarm) so we
+	// don't double-count a single firing in the summary.
+	seenAlarm := make(map[string]struct{})
+	seenInfo := make(map[string]struct{})
 	for _, e := range ents {
 		for _, a := range e.TriggeredAlarmState {
-			counts[a.OverallStatus]++
+			if _, dup := seenAlarm[a.Key]; !dup {
+				counts[a.OverallStatus]++
+				seenAlarm[a.Key] = struct{}{}
+			}
+			infoKey := e.Name + "|" + a.Alarm.Value + "|" + string(a.OverallStatus)
+			if _, dup := seenInfo[infoKey]; dup {
+				continue
+			}
+			seenInfo[infoKey] = struct{}{}
 			// alarm.Alarm is a MoRef; resolving to a readable name
 			// would need another fetch, so we ship the MoRef value.
 			s.ch <- prometheus.MustNewConstMetric(c.byInfo, prometheus.GaugeValue, 1,

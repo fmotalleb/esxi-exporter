@@ -73,7 +73,7 @@ func (c *SensorsCollector) Collect(s *scrapeContext) {
 
 	var hosts []mo.HostSystem
 	if err := v.Retrieve(s.ctx, []string{"HostSystem"},
-		[]string{"name", "runtime.healthSystemRuntime"}, &hosts); err != nil {
+		[]string{"name", "summary.config.name", "runtime.healthSystemRuntime"}, &hosts); err != nil {
 		log.Printf("sensors: retrieve failed: %v", err)
 		return
 	}
@@ -83,7 +83,10 @@ func (c *SensorsCollector) Collect(s *scrapeContext) {
 }
 
 func (c *SensorsCollector) emit(h *mo.HostSystem, s *scrapeContext) {
-	name := h.Name
+	name := hostName(h)
+	if name == "" {
+		return
+	}
 	hsr := h.Runtime.HealthSystemRuntime
 	if hsr == nil || hsr.SystemHealthInfo == nil {
 		return
