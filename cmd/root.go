@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/fmotalleb/go-tools/git"
 	"github.com/spf13/cobra"
 
 	"github.com/fmotalleb/esxi-exporter/config"
@@ -35,9 +36,10 @@ var cfgFile string
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "esxi-exporter",
-	Short: "Prometheus exporter for VMware ESXi metrics",
-	Long:  `A Prometheus exporter that collects every possible metric from ESXi hosts and VMs.`,
+	Use:     "esxi-exporter",
+	Short:   "Prometheus exporter for VMware ESXi metrics",
+	Long:    `A Prometheus exporter that collects every possible metric from ESXi hosts and VMs.`,
+	Version: git.String(),
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {

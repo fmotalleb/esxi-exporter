@@ -1,3 +1,4 @@
 FROM scratch
-COPY esxi-exporter /
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/esxi-exporter /
 ENTRYPOINT ["/esxi-exporter"]
