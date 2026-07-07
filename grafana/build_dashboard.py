@@ -29,7 +29,7 @@ def target(expr, legend="", instant=False, ref="A"):
         "instant": instant,
     }
 
-def stat(title, expr, unit="none", color_mode="value", thresholds=None, decimals=0, legend=""):
+def stat(title, expr, unit="none", color_mode="thresholds", thresholds=None, decimals=0, legend=""):
     thresholds = thresholds or {"mode": "absolute", "steps": [{"color": "green", "value": None}]}
     return {
         "id": next_id(),
@@ -193,7 +193,7 @@ overview = [
           ]}), 3),
     (stat("VMs Total", "count(esxi_vm_power_state)", "none"), 3),
     (stat("VMs Running", "sum(esxi_vm_power_state)", "none",
-          color_mode="value",
+          color_mode="thresholds",
           thresholds={"mode": "absolute", "steps": [{"color": "green", "value": None}]}), 3),
     (stat("Datastores", "count(esxi_datastore_capacity_bytes)", "none"), 3),
     (stat("Red Alarms",
@@ -613,7 +613,7 @@ dashboard = {
     "weekStart": "",
 }
 
-with open("/home/user/grafana/esxi-dashboard.json", "w") as f:
+with open("./esxi-dashboard.json", "w") as f:
     json.dump(dashboard, f, indent=2)
 
 print(f"Wrote {len(all_panels)} top-level panel entries")

@@ -69,7 +69,7 @@
             ]
           },
           "color": {
-            "mode": "value"
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -83,7 +83,7 @@
           "values": false
         },
         "textMode": "auto",
-        "colorMode": "value",
+        "colorMode": "thresholds",
         "graphMode": "area",
         "orientation": "auto"
       },
@@ -132,7 +132,7 @@
             ]
           },
           "color": {
-            "mode": "value"
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -146,7 +146,7 @@
           "values": false
         },
         "textMode": "auto",
-        "colorMode": "value",
+        "colorMode": "thresholds",
         "graphMode": "area",
         "orientation": "auto"
       },
@@ -195,7 +195,7 @@
             ]
           },
           "color": {
-            "mode": "value"
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -209,7 +209,7 @@
           "values": false
         },
         "textMode": "auto",
-        "colorMode": "value",
+        "colorMode": "thresholds",
         "graphMode": "area",
         "orientation": "auto"
       },
@@ -254,7 +254,7 @@
             ]
           },
           "color": {
-            "mode": "value"
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -268,7 +268,7 @@
           "values": false
         },
         "textMode": "auto",
-        "colorMode": "value",
+        "colorMode": "thresholds",
         "graphMode": "area",
         "orientation": "auto"
       },
@@ -313,7 +313,7 @@
             ]
           },
           "color": {
-            "mode": "value"
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -327,7 +327,7 @@
           "values": false
         },
         "textMode": "auto",
-        "colorMode": "value",
+        "colorMode": "thresholds",
         "graphMode": "area",
         "orientation": "auto"
       },
@@ -372,7 +372,7 @@
             ]
           },
           "color": {
-            "mode": "value"
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -386,7 +386,7 @@
           "values": false
         },
         "textMode": "auto",
-        "colorMode": "value",
+        "colorMode": "thresholds",
         "graphMode": "area",
         "orientation": "auto"
       },
@@ -435,7 +435,7 @@
             ]
           },
           "color": {
-            "mode": "value"
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -449,7 +449,7 @@
           "values": false
         },
         "textMode": "auto",
-        "colorMode": "value",
+        "colorMode": "thresholds",
         "graphMode": "area",
         "orientation": "auto"
       },
@@ -498,7 +498,7 @@
             ]
           },
           "color": {
-            "mode": "value"
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -512,7 +512,7 @@
           "values": false
         },
         "textMode": "auto",
-        "colorMode": "value",
+        "colorMode": "thresholds",
         "graphMode": "area",
         "orientation": "auto"
       },
@@ -1350,7 +1350,7 @@
                 ]
               },
               "color": {
-                "mode": "value"
+                "mode": "thresholds"
               }
             },
             "overrides": []
@@ -1364,7 +1364,7 @@
               "values": false
             },
             "textMode": "auto",
-            "colorMode": "value",
+            "colorMode": "thresholds",
             "graphMode": "area",
             "orientation": "auto"
           },
@@ -2099,7 +2099,7 @@
                 ]
               },
               "color": {
-                "mode": "value"
+                "mode": "thresholds"
               }
             },
             "overrides": []
@@ -2113,7 +2113,7 @@
               "values": false
             },
             "textMode": "auto",
-            "colorMode": "value",
+            "colorMode": "thresholds",
             "graphMode": "area",
             "orientation": "auto"
           },
@@ -2158,7 +2158,7 @@
                 ]
               },
               "color": {
-                "mode": "value"
+                "mode": "thresholds"
               }
             },
             "overrides": []
@@ -2172,7 +2172,7 @@
               "values": false
             },
             "textMode": "auto",
-            "colorMode": "value",
+            "colorMode": "thresholds",
             "graphMode": "area",
             "orientation": "auto"
           },
@@ -2217,7 +2217,7 @@
                 ]
               },
               "color": {
-                "mode": "value"
+                "mode": "thresholds"
               }
             },
             "overrides": []
@@ -2231,7 +2231,7 @@
               "values": false
             },
             "textMode": "auto",
-            "colorMode": "value",
+            "colorMode": "thresholds",
             "graphMode": "area",
             "orientation": "auto"
           },
@@ -2276,7 +2276,7 @@
                 ]
               },
               "color": {
-                "mode": "value"
+                "mode": "thresholds"
               }
             },
             "overrides": []
@@ -2290,7 +2290,7 @@
               "values": false
             },
             "textMode": "auto",
-            "colorMode": "value",
+            "colorMode": "thresholds",
             "graphMode": "area",
             "orientation": "auto"
           },
@@ -4458,7 +4458,7 @@
                 ]
               },
               "color": {
-                "mode": "value"
+                "mode": "thresholds"
               }
             },
             "overrides": []
@@ -4472,7 +4472,7 @@
               "values": false
             },
             "textMode": "auto",
-            "colorMode": "value",
+            "colorMode": "thresholds",
             "graphMode": "area",
             "orientation": "auto"
           },
@@ -4517,7 +4517,7 @@
                 ]
               },
               "color": {
-                "mode": "value"
+                "mode": "thresholds"
               }
             },
             "overrides": []
@@ -4531,7 +4531,7 @@
               "values": false
             },
             "textMode": "auto",
-            "colorMode": "value",
+            "colorMode": "thresholds",
             "graphMode": "area",
             "orientation": "auto"
           },
@@ -4576,7 +4576,7 @@
                 ]
               },
               "color": {
-                "mode": "value"
+                "mode": "thresholds"
               }
             },
             "overrides": []
@@ -4590,7 +4590,7 @@
               "values": false
             },
             "textMode": "auto",
-            "colorMode": "value",
+            "colorMode": "thresholds",
             "graphMode": "area",
             "orientation": "auto"
           },
@@ -4635,7 +4635,7 @@
                 ]
               },
               "color": {
-                "mode": "value"
+                "mode": "thresholds"
               }
             },
             "overrides": []
@@ -4649,7 +4649,7 @@
               "values": false
             },
             "textMode": "auto",
-            "colorMode": "value",
+            "colorMode": "thresholds",
             "graphMode": "area",
             "orientation": "auto"
           },
@@ -4893,7 +4893,7 @@
             ]
           },
           "color": {
-            "mode": "value"
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -4907,7 +4907,7 @@
           "values": false
         },
         "textMode": "auto",
-        "colorMode": "value",
+        "colorMode": "thresholds",
         "graphMode": "area",
         "orientation": "auto"
       },
@@ -4956,7 +4956,7 @@
             ]
           },
           "color": {
-            "mode": "value"
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -4970,7 +4970,7 @@
           "values": false
         },
         "textMode": "auto",
-        "colorMode": "value",
+        "colorMode": "thresholds",
         "graphMode": "area",
         "orientation": "auto"
       },
@@ -5015,7 +5015,7 @@
             ]
           },
           "color": {
-            "mode": "value"
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -5029,7 +5029,7 @@
           "values": false
         },
         "textMode": "auto",
-        "colorMode": "value",
+        "colorMode": "thresholds",
         "graphMode": "area",
         "orientation": "auto"
       },
@@ -5074,7 +5074,7 @@
             ]
           },
           "color": {
-            "mode": "value"
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -5088,7 +5088,7 @@
           "values": false
         },
         "textMode": "auto",
-        "colorMode": "value",
+        "colorMode": "thresholds",
         "graphMode": "area",
         "orientation": "auto"
       },
