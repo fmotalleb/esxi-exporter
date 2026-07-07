@@ -13,6 +13,8 @@ import (
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
 	"github.com/vmware/govmomi/view"
+	"github.com/vmware/govmomi/vim25/mo"
+	"github.com/vmware/govmomi/vim25/types"
 
 	"github.com/fmotalleb/esxi-exporter/config"
 )
@@ -212,6 +214,83 @@ type scrapeContext struct {
 	viewMgr *view.Manager
 	perf    *PerfCache
 	spec    config.ESXIHost
+
+	// hostNames maps a HostSystem MoRef value ("host-10") to its
+	// canonical name (DNS / IP as reported by summary.config.name).
+	//
+	// Why: mo.VirtualMachine.Runtime.Host is a *ManagedObjectReference
+	// whose Value is a MoRef ID, not a name. If the VMCollector emits
+	// that raw MoRef as the "host" label, it will not join in PromQL
+	// against esxi_host_* series that use the DNS name. This map lets
+	// every collector that has a MoRef translate to the name the host
+	// collector uses, so labels are consistent across metric families.
+	//
+	// Populated lazily by resolveHostName(); one round-trip per scrape
+	// on first use, cached for the rest of the scrape.
+	hostNames   map[string]string
+	hostNamesMu sync.Mutex
+}
+
+// resolveHostName returns the canonical host name for a HostSystem MoRef.
+// Falls back to the MoRef value itself if the host can't be resolved (e.g.
+// the entity was destroyed mid-scrape or the caller passed a bogus ref) —
+// returning "" would silently drop labels and hide real breakage.
+func (s *scrapeContext) resolveHostName(ref *types.ManagedObjectReference) string {
+	if ref == nil || ref.Value == "" {
+		return ""
+	}
+	s.hostNamesMu.Lock()
+	defer s.hostNamesMu.Unlock()
+
+	if s.hostNames != nil {
+		if name, ok := s.hostNames[ref.Value]; ok {
+			return name
+		}
+		// Cache miss on a subsequent call — return the MoRef so the
+		// metric still has a stable identity, and log once so users
+		// notice inventory drift instead of silently mismatched labels.
+		log.Printf("scrape: unknown host MoRef %s (inventory changed mid-scrape?)", ref.Value)
+		return ref.Value
+	}
+
+	// First call: build the map. We ask only for name/summary.config.name
+	// because that's cheap and matches what HostCollector uses as label.
+	v, err := s.viewMgr.CreateContainerView(s.ctx, s.client.ServiceContent.RootFolder,
+		[]string{"HostSystem"}, true)
+	if err != nil {
+		log.Printf("scrape: build host name map: create view failed: %v", err)
+		s.hostNames = map[string]string{} // negative cache to avoid retry
+		return ref.Value
+	}
+	defer v.Destroy(s.ctx)
+
+	var hosts []mo.HostSystem
+	if err := v.Retrieve(s.ctx, []string{"HostSystem"},
+		[]string{"name", "summary.config.name"}, &hosts); err != nil {
+		log.Printf("scrape: build host name map: retrieve failed: %v", err)
+		s.hostNames = map[string]string{}
+		return ref.Value
+	}
+
+	s.hostNames = make(map[string]string, len(hosts))
+	for _, h := range hosts {
+		name := h.Summary.Config.Name
+		if name == "" {
+			name = h.Name
+		}
+		if name == "" {
+			// Skip: entity is broken; storing "" would cause the
+			// same label-mismatch problem this whole function
+			// exists to solve.
+			continue
+		}
+		s.hostNames[h.Reference().Value] = name
+	}
+
+	if name, ok := s.hostNames[ref.Value]; ok {
+		return name
+	}
+	return ref.Value
 }
 
 func boolToFloat(b bool) float64 {

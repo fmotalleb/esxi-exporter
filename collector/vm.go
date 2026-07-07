@@ -278,9 +278,13 @@ func (c *VMCollector) Collect(s *scrapeContext) {
 
 func (c *VMCollector) emitStatic(v *mo.VirtualMachine, s *scrapeContext) {
 	name := v.Summary.Config.Name
+	// hostName must match what HostCollector uses (summary.config.name).
+	// Runtime.Host.Value would give us "host-10" which does not join
+	// against esxi_host_* series in PromQL. resolveHostName does the
+	// MoRef → name lookup with a per-scrape cache.
 	hostName := ""
 	if v.Runtime.Host != nil {
-		hostName = v.Runtime.Host.Value // MoRef value; caller can join
+		hostName = s.resolveHostName(v.Runtime.Host)
 	}
 
 	sum := v.Summary
@@ -325,7 +329,7 @@ func (c *VMCollector) emitGuest(v *mo.VirtualMachine, s *scrapeContext) {
 	name := v.Summary.Config.Name
 	hostName := ""
 	if v.Runtime.Host != nil {
-		hostName = v.Runtime.Host.Value
+		hostName = s.resolveHostName(v.Runtime.Host)
 	}
 
 	if v.Guest.HostName != "" {
@@ -396,7 +400,7 @@ func (c *VMCollector) emitConfig(v *mo.VirtualMachine, s *scrapeContext) {
 	name := v.Summary.Config.Name
 	hostName := ""
 	if v.Runtime.Host != nil {
-		hostName = v.Runtime.Host.Value
+		hostName = s.resolveHostName(v.Runtime.Host)
 	}
 
 	// Reservations / limits live in ResourceConfig; fall back gracefully.
@@ -501,7 +505,7 @@ func (c *VMCollector) emitPerfCPU(v *mo.VirtualMachine, s *scrapeContext) {
 		"cpu.system.summation", "cpu.used.summation",
 		"cpu.entitlement.latest", "cpu.demand.average", "cpu.latency.average",
 	}, "", IntervalRealtime)
-	name, hostName := v.Summary.Config.Name, morefValue(v.Runtime.Host)
+	name, hostName := v.Summary.Config.Name, s.resolveHostName(v.Runtime.Host)
 	emit := func(desc *prometheus.Desc, key string) {
 		if x, ok := m[key]; ok {
 			s.ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, x.Value, name, hostName)
@@ -524,7 +528,7 @@ func (c *VMCollector) emitPerfMem(v *mo.VirtualMachine, s *scrapeContext) {
 		"mem.compressed.average", "mem.shared.average", "mem.zero.average",
 		"mem.entitlement.average",
 	}, "", IntervalRealtime)
-	name, hostName := v.Summary.Config.Name, morefValue(v.Runtime.Host)
+	name, hostName := v.Summary.Config.Name, s.resolveHostName(v.Runtime.Host)
 	kb := func(desc *prometheus.Desc, key string) {
 		if x, ok := m[key]; ok {
 			s.ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, x.Value*1024, name, hostName)
@@ -559,7 +563,7 @@ func (c *VMCollector) emitPerfDisk(v *mo.VirtualMachine, s *scrapeContext) {
 		"virtualDisk.totalReadLatency.average",
 		"virtualDisk.totalWriteLatency.average",
 	}, IntervalRealtime)
-	name, hostName := v.Summary.Config.Name, morefValue(v.Runtime.Host)
+	name, hostName := v.Summary.Config.Name, s.resolveHostName(v.Runtime.Host)
 	// virtualDisk perf uses instances like "scsi0:0" — we relabel to the
 	// device label our config emits (disk-<key>) when possible by matching
 	// SCSI IDs, but the raw instance is fine for parity.
@@ -595,7 +599,7 @@ func (c *VMCollector) emitPerfNet(v *mo.VirtualMachine, s *scrapeContext) {
 		"net.bytesRx.average", "net.bytesTx.average",
 		"net.droppedRx.summation", "net.droppedTx.summation",
 	}, IntervalRealtime)
-	name, hostName := v.Summary.Config.Name, morefValue(v.Runtime.Host)
+	name, hostName := v.Summary.Config.Name, s.resolveHostName(v.Runtime.Host)
 	emit := func(desc *prometheus.Desc, key string, x float64) {
 		for _, sample := range m[key] {
 			s.ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue,
