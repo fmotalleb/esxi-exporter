@@ -1,11 +1,14 @@
 package config
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/fmotalleb/go-tools/defaulter"
 	"github.com/mitchellh/mapstructure"
 	"github.com/spf13/viper"
+
+	"github.com/fmotalleb/esxi-exporter/internal/secure"
 )
 
 type Config struct {
@@ -13,15 +16,13 @@ type Config struct {
 
 	Secrets struct {
 		Vault struct {
-			Address string `mapstructure:"address"`
-			Token   string `mapstructure:"token"`
-			Path    string `mapstructure:"path"`
+			Address   string `mapstructure:"address"`
+			Token     string `mapstructure:"token"`
+			MountPath string `mapstructure:"path"`
 		} `mapstructure:"vault"`
 		Bitwarden struct {
-			ServerURL string `mapstructure:"server_url"`
-			Email     string `mapstructure:"email"`
-			Password  string `mapstructure:"password"`
-			ItemID    string `mapstructure:"item_id"`
+			ServerURL    string `mapstructure:"server_url"`
+			SessionToken string `mapstructure:"session_token"`
 		} `mapstructure:"bitwarden"`
 	} `mapstructure:"secrets"`
 
@@ -34,6 +35,13 @@ type Config struct {
 	} `mapstructure:"web"`
 
 	Metrics MetricsConfig `mapstructure:"metrics"`
+
+	// SecretStore is initialised after Load() returns. It holds cached
+	// passwords in zeroable memory and is used by the collector instead
+	// of reading ESXIHost.Password directly. Load returns a store only
+	// when at least one resolver is configured; otherwise it remains nil
+	// and the collector falls back to the inline password.
+	SecretStore *SecretStore `mapstructure:"-"`
 }
 
 func Load(path string) (*Config, error) {
@@ -61,17 +69,54 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("decode config: %w", err)
 	}
 
-	// TODO: fetch secrets from vault / bitwarden if configured
-	if cfg.Secrets.Vault.Address != "" {
-		// placeholder: implement vault secret fetch
+	if err := cfg.initSecretStore(context.Background()); err != nil {
+		return nil, fmt.Errorf("init secret store: %w", err)
 	}
+
 	defaulter.ApplyDefaults(&cfg, nil)
 	return &cfg, nil
+}
+
+// initSecretStore builds the SecretStore by registering resolvers for any
+// configured secret backends. Must be called after the config is decoded.
+// The SecretStore is always created (even with zero resolvers) so that
+// inline passwords in ESXIHost.Password are also cached in zeroable memory.
+func (cfg *Config) initSecretStore(ctx context.Context) error {
+	var resolvers []PasswordResolver
+
+	if cfg.Secrets.Vault.Address != "" {
+		mountPath := cfg.Secrets.Vault.MountPath
+		if mountPath == "" {
+			mountPath = "secret"
+		}
+		vr, err := NewVaultResolver(cfg.Secrets.Vault.Address, cfg.Secrets.Vault.Token, mountPath)
+		if err != nil {
+			return fmt.Errorf("vault resolver: %w", err)
+		}
+		resolvers = append(resolvers, vr)
+	}
+
+	if cfg.Secrets.Bitwarden.SessionToken != "" || cfg.Secrets.Bitwarden.ServerURL != "" {
+		resolvers = append(resolvers, NewBitwardenResolver(cfg.Secrets.Bitwarden.ServerURL, cfg.Secrets.Bitwarden.SessionToken))
+	}
+
+	cfg.SecretStore = NewSecretStore(resolvers...)
+	return nil
 }
 
 type ESXIHost struct {
 	Host     string `mapstructure:"host"`
 	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
+	Password secure.SafePassword `mapstructure:"password"`
 	Insecure bool   `mapstructure:"insecure"`
+
+	// VaultPath is the path of the secret in Vault's KV v2 engine
+	// (e.g. "databases/esxi/prod"). When set, the Vault resolver will
+	// fetch the password from this path instead of using the inline
+	// password field.
+	VaultPath string `mapstructure:"vault_path"`
+
+	// BitwardenItemID is the ID of a Bitwarden item whose
+	// login.password field contains the ESXi password.
+	BitwardenItemID string `mapstructure:"bitwarden_item_id"`
 }

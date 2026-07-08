@@ -2,13 +2,13 @@ package collector
 
 import (
 	"context"
-	"log"
 	"net/url"
 	"sync"
 	"time"
 
 	dto "github.com/prometheus/client_model/go"
 
+	"github.com/fmotalleb/go-tools/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vmware/govmomi"
 	"github.com/vmware/govmomi/find"
@@ -17,6 +17,7 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 
 	"github.com/fmotalleb/esxi-exporter/config"
+	"github.com/fmotalleb/esxi-exporter/internal/secure"
 )
 
 // defaultCollectTimeout bounds a full Collect() call so an unreachable
@@ -49,24 +50,31 @@ type ESXiCollector struct {
 	events    *EventsCollector
 	alarms    *AlarmsCollector
 
+	// baseCtx is the parent context carrying the zap logger attached by
+	// log.WithNewEnvLoggerForced. Stored so Collect() can derive its
+	// timeout context from it, ensuring all collector log calls find the
+	// logger via log.FromContext(ctx).
+	baseCtx context.Context
+
 	// Shared, per-scrape perf lookup cache. Because Prometheus drives the
 	// cadence (each scrape triggers Collect), we build a fresh cache each
 	// scrape and discard it — no goroutine-managed refresh loop.
 	// The cache is per-endpoint because counter IDs differ across vCenters.
 }
 
-func NewESXiCollector(cfg *config.Config) *ESXiCollector {
+func NewESXiCollector(ctx context.Context, cfg *config.Config) *ESXiCollector {
 	return &ESXiCollector{
-		cfg:       cfg,
-		host:      NewHostCollector(cfg),
-		vm:        NewVMCollector(cfg),
+		baseCtx:  ctx,
+		cfg:      cfg,
+		host:     NewHostCollector(cfg),
+		vm:       NewVMCollector(cfg),
 		datastore: NewDatastoreCollector(cfg),
-		cluster:   NewClusterCollector(cfg),
-		network:   NewNetworkCollector(cfg),
-		rp:        NewResourcePoolCollector(cfg),
-		sensors:   NewSensorsCollector(cfg),
-		events:    NewEventsCollector(cfg),
-		alarms:    NewAlarmsCollector(cfg),
+		cluster:  NewClusterCollector(cfg),
+		network:  NewNetworkCollector(cfg),
+		rp:       NewResourcePoolCollector(cfg),
+		sensors:  NewSensorsCollector(cfg),
+		events:   NewEventsCollector(cfg),
+		alarms:   NewAlarmsCollector(cfg),
 	}
 }
 
@@ -83,7 +91,7 @@ func (c *ESXiCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (c *ESXiCollector) Collect(ch chan<- prometheus.Metric) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultCollectTimeout)
+	ctx, cancel := context.WithTimeout(c.baseCtx, defaultCollectTimeout)
 	defer cancel()
 
 	// One dedup set for the whole scrape. We wrap the caller-supplied
@@ -111,23 +119,38 @@ func (c *ESXiCollector) Collect(ch chan<- prometheus.Metric) {
 func (c *ESXiCollector) collectEndpoint(ctx context.Context, ch chan<- prometheus.Metric, spec config.ESXIHost) {
 	u, err := url.Parse(spec.Host)
 	if err != nil {
-		log.Printf("invalid esxi host url: %v", err)
+		log.FromContext(ctx).Sugar().Errorw("invalid esxi host url", "host", spec.Host, "error", err)
 		return
 	}
 	if spec.Username != "" {
-		u.User = url.UserPassword(spec.Username, spec.Password)
+		// Resolve the password lazily through the SecretStore (which may
+		// fetch from Vault / Bitwarden on first call and caches in
+		// zeroable memory for subsequent scrapes).
+		pw, pwErr := c.resolvePassword(ctx, &spec)
+		if pwErr != nil {
+			log.FromContext(ctx).Sugar().Errorw("failed to resolve password", "host", spec.Host, "error", pwErr)
+			return
+		}
+		if pw == nil || pw.Len() == 0 {
+			log.FromContext(ctx).Sugar().Errorw("no password available for host", "host", spec.Host)
+			return
+		}
+		// Build the userinfo from the secure bytes without creating an
+		// intermediate string that lingers in memory.
+		userinfo := url.UserPassword(spec.Username, string(pw.Bytes()))
+		u.User = userinfo
 	}
 
 	client, err := govmomi.NewClient(ctx, u, spec.Insecure)
 	if err != nil {
-		log.Printf("failed to connect to esxi %s: %v", spec.Host, err)
+		log.FromContext(ctx).Sugar().Errorw("failed to connect to esxi", "host", spec.Host, "error", err)
 		return
 	}
 	defer func() {
 		logoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := client.Logout(logoutCtx); err != nil {
-			log.Printf("esxi logout error: %v", err)
+			log.FromContext(ctx).Sugar().Errorw("esxi logout error", "host", spec.Host, "error", err)
 		}
 	}()
 
@@ -140,7 +163,7 @@ func (c *ESXiCollector) collectEndpoint(ctx context.Context, ch chan<- prometheu
 	finder := find.NewFinder(client.Client, true)
 	dc, err := finder.DefaultDatacenter(ctx)
 	if err != nil {
-		log.Printf("failed to get datacenter for %s: %v", spec.Host, err)
+		log.FromContext(ctx).Sugar().Errorw("failed to get datacenter", "host", spec.Host, "error", err)
 		return
 	}
 	finder.SetDatacenter(dc)
@@ -168,7 +191,7 @@ func (c *ESXiCollector) collectEndpoint(ctx context.Context, ch chan<- prometheu
 			defer wg.Done()
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("collector %s panic: %v", name, r)
+					log.FromContext(ctx).Sugar().Errorw("collector panic", "collector", name, "panic", r)
 				}
 			}()
 			fn(scrape)
@@ -249,7 +272,7 @@ func (s *scrapeContext) resolveHostName(ref *types.ManagedObjectReference) strin
 		// Cache miss on a subsequent call — return the MoRef so the
 		// metric still has a stable identity, and log once so users
 		// notice inventory drift instead of silently mismatched labels.
-		log.Printf("scrape: unknown host MoRef %s (inventory changed mid-scrape?)", ref.Value)
+		log.FromContext(s.ctx).Sugar().Warnw("unknown host MoRef (inventory changed mid-scrape?)", "moref", ref.Value)
 		return ref.Value
 	}
 
@@ -258,7 +281,7 @@ func (s *scrapeContext) resolveHostName(ref *types.ManagedObjectReference) strin
 	v, err := s.viewMgr.CreateContainerView(s.ctx, s.client.ServiceContent.RootFolder,
 		[]string{"HostSystem"}, true)
 	if err != nil {
-		log.Printf("scrape: build host name map: create view failed: %v", err)
+		log.FromContext(s.ctx).Sugar().Errorw("scrape: build host name map: create view failed", "error", err)
 		s.hostNames = map[string]string{} // negative cache to avoid retry
 		return ref.Value
 	}
@@ -267,7 +290,7 @@ func (s *scrapeContext) resolveHostName(ref *types.ManagedObjectReference) strin
 	var hosts []mo.HostSystem
 	if err := v.Retrieve(s.ctx, []string{"HostSystem"},
 		[]string{"name", "summary.config.name"}, &hosts); err != nil {
-		log.Printf("scrape: build host name map: retrieve failed: %v", err)
+		log.FromContext(s.ctx).Sugar().Errorw("scrape: build host name map: retrieve failed", "error", err)
 		s.hostNames = map[string]string{}
 		return ref.Value
 	}
@@ -291,6 +314,14 @@ func (s *scrapeContext) resolveHostName(ref *types.ManagedObjectReference) strin
 		return name
 	}
 	return ref.Value
+}
+
+// resolvePassword retrieves the password for a host from the SecretStore
+// (which caches in zeroable memory). The SecretStore is always created during
+// config.Load, even when no external resolvers are configured, ensuring that
+// inline passwords are also stored in zeroable memory after the first fetch.
+func (c *ESXiCollector) resolvePassword(ctx context.Context, host *config.ESXIHost) (*secure.SecureBytes, error) {
+	return c.cfg.SecretStore.GetPassword(ctx, host)
 }
 
 func boolToFloat(b bool) float64 {
