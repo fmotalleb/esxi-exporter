@@ -1,9 +1,9 @@
 package collector
 
 import (
-	"log"
 	"time"
 
+	"github.com/fmotalleb/go-tools/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vmware/govmomi/event"
 	"github.com/vmware/govmomi/vim25/types"
@@ -72,7 +72,7 @@ func (c *EventsCollector) Collect(s *scrapeContext) {
 	// rather stay bounded than blow out a scrape.
 	events, err := mgr.QueryEvents(s.ctx, filter)
 	if err != nil {
-		log.Printf("events: query failed: %v", err)
+		log.FromContext(s.ctx).Sugar().Errorw("events: query failed", "error", err)
 		return
 	}
 

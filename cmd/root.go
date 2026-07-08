@@ -22,10 +22,11 @@ THE SOFTWARE.
 package cmd
 
 import (
-	"fmt"
+	"context"
 	"os"
 
 	"github.com/fmotalleb/go-tools/git"
+	"github.com/fmotalleb/go-tools/log"
 	"github.com/spf13/cobra"
 
 	"github.com/fmotalleb/esxi-exporter/config"
@@ -43,14 +44,16 @@ var rootCmd = &cobra.Command{
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
+		ctx := log.WithNewEnvLoggerForced(context.Background())
+
 		cfg, err := config.Load(cfgFile)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "failed to load config:", err)
+			log.FromContext(ctx).Sugar().Errorw("failed to load config", "error", err)
 			os.Exit(1)
 		}
 
-		if err := server.Run(cfg); err != nil {
-			fmt.Fprintln(os.Stderr, "server error:", err)
+		if err := server.Run(ctx, cfg); err != nil {
+			log.FromContext(ctx).Sugar().Errorw("server error", "error", err)
 			os.Exit(1)
 		}
 	},

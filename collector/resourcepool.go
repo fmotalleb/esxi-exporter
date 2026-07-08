@@ -1,8 +1,7 @@
 package collector
 
 import (
-	"log"
-
+	"github.com/fmotalleb/go-tools/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vmware/govmomi/vim25/mo"
 
@@ -65,7 +64,7 @@ func (c *ResourcePoolCollector) Collect(s *scrapeContext) {
 	v, err := s.viewMgr.CreateContainerView(s.ctx, s.client.ServiceContent.RootFolder,
 		[]string{"ResourcePool"}, true)
 	if err != nil {
-		log.Printf("resource_pool: create view failed: %v", err)
+		log.FromContext(s.ctx).Sugar().Errorw("resource_pool: create view failed", "error", err)
 		return
 	}
 	defer v.Destroy(s.ctx)
@@ -73,7 +72,7 @@ func (c *ResourcePoolCollector) Collect(s *scrapeContext) {
 	var rps []mo.ResourcePool
 	if err := v.Retrieve(s.ctx, []string{"ResourcePool"},
 		[]string{"name", "config", "summary", "vm", "owner"}, &rps); err != nil {
-		log.Printf("resource_pool: retrieve failed: %v", err)
+		log.FromContext(s.ctx).Sugar().Errorw("resource_pool: retrieve failed", "error", err)
 		return
 	}
 	for i := range rps {

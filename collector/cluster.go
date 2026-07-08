@@ -1,8 +1,7 @@
 package collector
 
 import (
-	"log"
-
+	"github.com/fmotalleb/go-tools/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
@@ -78,7 +77,7 @@ func (c *ClusterCollector) Collect(s *scrapeContext) {
 	v, err := s.viewMgr.CreateContainerView(s.ctx, s.client.ServiceContent.RootFolder,
 		[]string{"ClusterComputeResource"}, true)
 	if err != nil {
-		log.Printf("cluster: create view failed: %v", err)
+		log.FromContext(s.ctx).Sugar().Errorw("cluster: create view failed", "error", err)
 		return
 	}
 	defer v.Destroy(s.ctx)
@@ -87,7 +86,7 @@ func (c *ClusterCollector) Collect(s *scrapeContext) {
 	if err := v.Retrieve(s.ctx, []string{"ClusterComputeResource"},
 		[]string{"summary", "configurationEx", "host", "resourcePool"},
 		&clusters); err != nil {
-		log.Printf("cluster: retrieve failed: %v", err)
+		log.FromContext(s.ctx).Sugar().Errorw("cluster: retrieve failed", "error", err)
 		return
 	}
 

@@ -2,9 +2,9 @@ package collector
 
 import (
 	"context"
-	"log"
 	"sync"
 
+	"github.com/fmotalleb/go-tools/log"
 	"github.com/vmware/govmomi/performance"
 	"github.com/vmware/govmomi/vim25"
 )
@@ -53,7 +53,7 @@ func (p *PerfCache) load(ctx context.Context) {
 	mgr := performance.NewManager(p.client)
 	counters, err := mgr.CounterInfoByName(ctx)
 	if err != nil {
-		log.Printf("perf: CounterInfoByName failed: %v", err)
+		log.FromContext(ctx).Sugar().Errorw("perf: CounterInfoByName failed", "error", err)
 		return
 	}
 	for name, c := range counters {
@@ -76,7 +76,7 @@ func (p *PerfCache) IDs(ctx context.Context, names []string) []int32 {
 		id, ok := p.byName[n]
 		if !ok {
 			if _, warned := p.warned[n]; !warned {
-				log.Printf("perf: counter %q not available on this endpoint", n)
+				log.FromContext(ctx).Sugar().Warnw("perf: counter not available on this endpoint", "counter", n)
 				p.warned[n] = struct{}{}
 			}
 			continue

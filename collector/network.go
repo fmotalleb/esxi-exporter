@@ -1,8 +1,7 @@
 package collector
 
 import (
-	"log"
-
+	"github.com/fmotalleb/go-tools/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
@@ -66,7 +65,7 @@ func (c *NetworkCollector) Collect(s *scrapeContext) {
 	v, err := s.viewMgr.CreateContainerView(s.ctx, s.client.ServiceContent.RootFolder,
 		[]string{"HostSystem"}, true)
 	if err != nil {
-		log.Printf("network: create view failed: %v", err)
+		log.FromContext(s.ctx).Sugar().Errorw("network: create view failed", "error", err)
 		return
 	}
 	defer v.Destroy(s.ctx)
@@ -74,7 +73,7 @@ func (c *NetworkCollector) Collect(s *scrapeContext) {
 	var hosts []mo.HostSystem
 	if err := v.Retrieve(s.ctx, []string{"HostSystem"},
 		[]string{"name", "summary.config.name", "config.network"}, &hosts); err != nil {
-		log.Printf("network: retrieve hosts failed: %v", err)
+		log.FromContext(s.ctx).Sugar().Errorw("network: retrieve hosts failed", "error", err)
 		return
 	}
 	for i := range hosts {

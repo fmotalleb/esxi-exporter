@@ -1,9 +1,10 @@
 package server
 
 import (
-	"log"
+	"context"
 	"net/http"
 
+	"github.com/fmotalleb/go-tools/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/exporter-toolkit/web"
@@ -12,9 +13,9 @@ import (
 	"github.com/fmotalleb/esxi-exporter/config"
 )
 
-func Run(cfg *config.Config) error {
+func Run(ctx context.Context, cfg *config.Config) error {
 	reg := prometheus.NewRegistry()
-	reg.MustRegister(collector.NewESXiCollector(cfg))
+	reg.MustRegister(collector.NewESXiCollector(ctx, cfg))
 
 	handler := promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
 
@@ -36,7 +37,7 @@ func Run(cfg *config.Config) error {
 	server := &http.Server{Addr: listen, Handler: mux}
 
 	if cfg.Web.TLS.CertFile != "" && cfg.Web.TLS.KeyFile != "" {
-		log.Printf("Listening on %s (TLS)", listen)
+		log.FromContext(ctx).Sugar().Infow("listening", "address", listen, "tls", true)
 		return web.ListenAndServe(server, &web.FlagConfig{
 			WebListenAddresses: &[]string{listen},
 			WebSystemdSocket:   new(bool),
@@ -44,6 +45,6 @@ func Run(cfg *config.Config) error {
 		}, nil)
 	}
 
-	log.Printf("Listening on %s", listen)
+	log.FromContext(ctx).Sugar().Infow("listening", "address", listen, "tls", false)
 	return server.ListenAndServe()
 }

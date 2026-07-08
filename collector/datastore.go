@@ -1,8 +1,7 @@
 package collector
 
 import (
-	"log"
-
+	"github.com/fmotalleb/go-tools/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vmware/govmomi/vim25/mo"
 
@@ -84,7 +83,7 @@ func (c *DatastoreCollector) Collect(s *scrapeContext) {
 	v, err := s.viewMgr.CreateContainerView(s.ctx, s.client.ServiceContent.RootFolder,
 		[]string{"Datastore"}, true)
 	if err != nil {
-		log.Printf("datastore: create view failed: %v", err)
+		log.FromContext(s.ctx).Sugar().Errorw("datastore: create view failed", "error", err)
 		return
 	}
 	defer v.Destroy(s.ctx)
@@ -92,7 +91,7 @@ func (c *DatastoreCollector) Collect(s *scrapeContext) {
 	var dss []mo.Datastore
 	if err := v.Retrieve(s.ctx, []string{"Datastore"},
 		[]string{"summary", "info", "host", "vm"}, &dss); err != nil {
-		log.Printf("datastore: retrieve failed: %v", err)
+		log.FromContext(s.ctx).Sugar().Errorw("datastore: retrieve failed", "error", err)
 		return
 	}
 

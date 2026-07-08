@@ -1,8 +1,7 @@
 package collector
 
 import (
-	"log"
-
+	"github.com/fmotalleb/go-tools/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/types"
@@ -46,7 +45,7 @@ func (c *AlarmsCollector) Collect(s *scrapeContext) {
 	v, err := s.viewMgr.CreateContainerView(s.ctx, s.client.ServiceContent.RootFolder,
 		[]string{"ManagedEntity"}, true)
 	if err != nil {
-		log.Printf("alarms: create view failed: %v", err)
+		log.FromContext(s.ctx).Sugar().Errorw("alarms: create view failed", "error", err)
 		return
 	}
 	defer v.Destroy(s.ctx)
@@ -54,7 +53,7 @@ func (c *AlarmsCollector) Collect(s *scrapeContext) {
 	var ents []mo.ManagedEntity
 	if err := v.Retrieve(s.ctx, []string{"ManagedEntity"},
 		[]string{"name", "triggeredAlarmState"}, &ents); err != nil {
-		log.Printf("alarms: retrieve failed: %v", err)
+		log.FromContext(s.ctx).Sugar().Errorw("alarms: retrieve failed", "error", err)
 		return
 	}
 

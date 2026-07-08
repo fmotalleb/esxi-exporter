@@ -2,8 +2,8 @@ package collector
 
 import (
 	"context"
-	"log"
 
+	"github.com/fmotalleb/go-tools/log"
 	"github.com/vmware/govmomi/performance"
 	"github.com/vmware/govmomi/vim25/types"
 )
@@ -72,12 +72,12 @@ func queryPerf(
 	mgr := performance.NewManager(perf.client)
 	series, err := mgr.Query(ctx, []types.PerfQuerySpec{query})
 	if err != nil {
-		log.Printf("perf query failed for %s: %v", entity.Value, err)
+		log.FromContext(ctx).Sugar().Errorw("perf query failed", "entity", entity.Value, "error", err)
 		return nil
 	}
 	result, err := mgr.ToMetricSeries(ctx, series)
 	if err != nil {
-		log.Printf("perf series decode failed for %s: %v", entity.Value, err)
+		log.FromContext(ctx).Sugar().Errorw("perf series decode failed", "entity", entity.Value, "error", err)
 		return nil
 	}
 
@@ -136,7 +136,7 @@ func queryPerfInstances(
 		IntervalId: interval,
 	}})
 	if err != nil {
-		log.Printf("perf query failed for %s: %v", entity.Value, err)
+		log.FromContext(ctx).Sugar().Errorw("perf query failed", "entity", entity.Value, "error", err)
 		return nil
 	}
 	result, err := mgr.ToMetricSeries(ctx, series)
