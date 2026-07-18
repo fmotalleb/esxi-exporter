@@ -1,6 +1,6 @@
 # esxi-exporter
 
-Prometheus exporter for VMware ESXi (all metrics + per-VM).
+Prometheus exporter for VMware ESXi (all metrics + per-VM + cluster).
 
 ## Usage
 
@@ -21,10 +21,15 @@ Web config is fully compatible with `web.yml` used by Prometheus node_exporter.
 Example `config.yaml`:
 
 ```yaml
-esxi:
-  host: "https://esxi.example.com"
-  username: "root"
-  password: "secret"
+hosts:
+  - host: "https://vcsa-host.idc.local/sdk/"
+    username: "username"
+    password: "password"
+    insecure: true
+  - host: "https://vcsa-host2.idc.local/sdk/"
+    username: "username"
+    password: "password"
+    insecure: true
 
 web:
   listen_address: ":9272"
