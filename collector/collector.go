@@ -137,13 +137,22 @@ func (c *ESXiCollector) collectEndpoint(ctx context.Context, ch chan<- prometheu
 
 	// Datacenter is optional — some vCenter deployments have many; iterate
 	// or fall back to DefaultDatacenter for standalone ESXi.
+	// When multiple datacenters exist (vCenter), DefaultDatacenter returns a
+	// DefaultMultipleFoundError; we log and continue because every sub-collector
+	// uses CreateContainerView starting from RootFolder and does not need the
+	// finder to be scoped to a single datacenter.
 	finder := find.NewFinder(client.Client, true)
 	dc, err := finder.DefaultDatacenter(ctx)
 	if err != nil {
-		log.Printf("failed to get datacenter for %s: %v", spec.Host, err)
-		return
+		if _, ok := err.(*find.DefaultMultipleFoundError); ok {
+			log.Printf("host %s has multiple datacenters; collecting from all", spec.Host)
+		} else {
+			log.Printf("failed to get datacenter for %s: %v", spec.Host, err)
+			return
+		}
+	} else {
+		finder.SetDatacenter(dc)
 	}
-	finder.SetDatacenter(dc)
 
 	// A single ContainerView per Managed Object type is cheaper than
 	// repeated finder.*List calls when we later query properties in bulk.
